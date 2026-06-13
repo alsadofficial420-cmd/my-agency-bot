@@ -24,7 +24,7 @@ def send_message(chat_id, text):
 
 def ask_gemini(user_message):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_KEY}"
         payload = {"contents": [{"parts": [{"text": user_message}]}]}
         headers = {"Content-Type": "application/json"}
 
