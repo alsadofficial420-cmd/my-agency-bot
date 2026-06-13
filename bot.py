@@ -1,17 +1,18 @@
 import os
+import sys
 import requests
-import logging
 from flask import Flask, request
 import telebot
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
 
 
 def ask_gemini(user_message):
@@ -23,31 +24,32 @@ def ask_gemini(user_message):
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         data = response.json()
 
-        logger.info(f"Gemini response status: {response.status_code}")
-        logger.info(f"Gemini response data: {data}")
+        log(f"GEMINI STATUS: {response.status_code}")
+        log(f"GEMINI DATA: {data}")
 
         if 'candidates' in data and len(data['candidates']) > 0:
             return data['candidates'][0]['content']['parts'][0]['text']
         elif 'error' in data:
             error_msg = data['error'].get('message', 'Unknown error')
-            logger.error(f"Gemini API error: {error_msg}")
             return f"দুঃখিত, AI সার্ভিসে সমস্যা: {error_msg}"
         else:
-            logger.error(f"Unexpected Gemini response: {data}")
             return "দুঃখিত, AI থেকে কোনো উত্তর পাওয়া যায়নি।"
     except Exception as e:
-        logger.error(f"Exception in ask_gemini: {str(e)}")
+        log(f"EXCEPTION in ask_gemini: {str(e)}")
         return f"সার্ভার এরর: {str(e)}"
 
 
 @app.route('/webhook', methods=['POST'])
 def getMessage():
+    log("WEBHOOK HIT")
     try:
         json_string = request.get_data().decode('utf-8')
+        log(f"RAW UPDATE: {json_string}")
         update = telebot.types.Update.de_json(json_string)
         bot.process_new_updates([update])
+        log("PROCESSED UPDATE OK")
     except Exception as e:
-        logger.error(f"Webhook processing error: {str(e)}")
+        log(f"WEBHOOK ERROR: {str(e)}")
     return "!", 200
 
 
@@ -58,23 +60,28 @@ def home():
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    log("START COMMAND RECEIVED")
     try:
         bot.reply_to(message, "আসসালামু আলাইকুম! আমি লাইভ আছি। বলুন কীভাবে সাহায্য করতে পারি?")
+        log("START REPLY SENT")
     except Exception as e:
-        logger.error(f"Start command error: {str(e)}")
+        log(f"START ERROR: {str(e)}")
 
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
+    log(f"MESSAGE RECEIVED: {message.text}")
     try:
         bot_response = ask_gemini(message.text)
+        log(f"SENDING REPLY: {bot_response}")
         bot.reply_to(message, bot_response)
+        log("REPLY SENT OK")
     except Exception as e:
-        logger.error(f"Message handler error: {str(e)}")
+        log(f"MESSAGE HANDLER ERROR: {str(e)}")
         try:
             bot.reply_to(message, f"মেসেজ হ্যান্ডলার এরর: {str(e)}")
-        except:
-            pass
+        except Exception as e2:
+            log(f"REPLY ERROR TOO: {str(e2)}")
 
 
 if __name__ == "__main__":
