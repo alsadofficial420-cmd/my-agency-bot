@@ -1,18 +1,25 @@
 import os
 import sys
+import json
 import requests
 from flask import Flask, request
-import telebot
 
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-bot = telebot.TeleBot(BOT_TOKEN)
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
 app = Flask(__name__)
 
 
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
+
+
+def send_message(chat_id, text):
+    url = f"{TELEGRAM_API}/sendMessage"
+    resp = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=30)
+    log(f"SEND MESSAGE RESPONSE: {resp.status_code} {resp.text}")
 
 
 def ask_gemini(user_message):
@@ -40,48 +47,36 @@ def ask_gemini(user_message):
 
 
 @app.route('/webhook', methods=['POST'])
-def getMessage():
+def webhook():
     log("WEBHOOK HIT")
     try:
-        json_string = request.get_data().decode('utf-8')
-        log(f"RAW UPDATE: {json_string}")
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        log("PROCESSED UPDATE OK")
+        update = request.get_json()
+        log(f"UPDATE: {update}")
+
+        if update and "message" in update:
+            chat_id = update["message"]["chat"]["id"]
+            text = update["message"].get("text", "")
+
+            log(f"CHAT_ID: {chat_id}, TEXT: {text}")
+
+            if text == "/start":
+                send_message(chat_id, "আসসালামু আলাইকুম! আমি লাইভ আছি। বলুন কীভাবে সাহায্য করতে পারি?")
+            else:
+                reply = ask_gemini(text)
+                log(f"REPLY: {reply}")
+                send_message(chat_id, reply)
+        else:
+            log("NO MESSAGE IN UPDATE")
+
     except Exception as e:
         log(f"WEBHOOK ERROR: {str(e)}")
-    return "!", 200
+
+    return "ok", 200
 
 
 @app.route('/')
 def home():
     return "Bot is running 24/7!", 200
-
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    log("START COMMAND RECEIVED")
-    try:
-        bot.reply_to(message, "আসসালামু আলাইকুম! আমি লাইভ আছি। বলুন কীভাবে সাহায্য করতে পারি?")
-        log("START REPLY SENT")
-    except Exception as e:
-        log(f"START ERROR: {str(e)}")
-
-
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    log(f"MESSAGE RECEIVED: {message.text}")
-    try:
-        bot_response = ask_gemini(message.text)
-        log(f"SENDING REPLY: {bot_response}")
-        bot.reply_to(message, bot_response)
-        log("REPLY SENT OK")
-    except Exception as e:
-        log(f"MESSAGE HANDLER ERROR: {str(e)}")
-        try:
-            bot.reply_to(message, f"মেসেজ হ্যান্ডলার এরর: {str(e)}")
-        except Exception as e2:
-            log(f"REPLY ERROR TOO: {str(e2)}")
 
 
 if __name__ == "__main__":
